@@ -34,8 +34,11 @@ dependencies:
   latlong2: ^0.9.0
   http: ^1.2.2
   flutter_dotenv: ^5.0.2
+  fl_chart: ^0.65.0
+  google_sign_in: ^6.1.6
+  country_code_picker: ^3.0.0
   logger: ^1.0.0
-
+  intl: ^0.18.0
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
@@ -62,6 +65,9 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
+    - assets/logo.png
+    - assets/google_logo.png
+    #- packages/country_code_picker/flags/
     - .env
 
   # To add assets to your application, add an assets section, like this:

@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'device_details_screen.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({Key? key}) : super(key: key);
+  final dynamic userId;
+  
+  const MapScreen({
+    Key? key,
+    required this.userId,
+  }) : super(key: key);
 
   @override
   _MapScreenState createState() => _MapScreenState();
@@ -44,10 +50,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _fetchDevices() async {
     try {
+      final url = '${dotenv.env['API_URL']}${dotenv.env['DEVICES_LIST']}?userListId=${widget.userId}';
+      print("Fetching devices from URL: $url");
+      
       final response = await http.get(
-        Uri.parse('${dotenv.env['API_URL']}${dotenv.env['DEVICES_LIST']}102'),
-        headers: {"accept": "text/plain"},
+        Uri.parse(url),
+        headers: {"accept": "application/json"},
       );
+
+      print("Response status: ${response.statusCode}");
+      print("Response body: ${response.body}");
 
       if (response.statusCode == 200) {
         final List<dynamic> decodedData = json.decode(response.body);
@@ -56,19 +68,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           isLoading = false;
         });
       } else {
-        throw Exception('Failed to load devices');
+        throw Exception('Failed to load devices: ${response.statusCode}');
       }
     } catch (e) {
+      print("Error fetching devices: $e");
       setState(() {
         isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
- void _onMarkerTapped(int index) {
+  void _onMarkerTapped(int index) {
     setState(() {
       currentDeviceIndex = index;
     });
@@ -133,9 +152,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           width: 40.0,
                           height: 40.0,
                           point: LatLng(device.latitude, device.longitude),
-                          builder: (ctx) => GestureDetector(
-                            onTap: () => _onMarkerTapped(idx),
-                            child: MapMarker(device: device),
+                          builder: (ctx) => MapMarker(
+                            device: device,
+                            onTap: () {
+                              _onMarkerTapped(idx);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => DeviceDetailsScreen(
+                                    deviceId: device.id,
+                                    userId: widget.userId,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         );
                       }).toList(),
@@ -167,67 +197,102 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildDeviceCard(DeviceSettings device) {
-  return Card(
-    margin: EdgeInsets.symmetric(horizontal: 8),
-    elevation: 8,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0), 
-      child: Row(
-        children: [
-          DeviceIcon(device: device, size: 40),
-          SizedBox(width: 8), // Зменшено відстань між іконкою та текстом
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DeviceDetailsScreen(
+              deviceId: device.id,
+              userId: widget.userId,
+            ),
+          ),
+        );
+      },
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        elevation: 8,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+            child: Row(
               children: [
-                Text(
-                  device.name,
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                SizedBox(height: 2), // Зменшено висоту між текстами
-                Text(
-                  device.getStatusText(),
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                DeviceIcon(device: device, size: 40),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        device.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.black,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        device.getStatusText(),
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 
 class MapMarker extends StatelessWidget {
   final DeviceSettings device;
+  final VoidCallback onTap;
 
-  const MapMarker({Key? key, required this.device}) : super(key: key);
+  const MapMarker({
+    Key? key, 
+    required this.device,
+    required this.onTap,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 40.0,
-      height: 40.0,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 6,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Center(
-        child: DeviceIcon(device: device, size: 30.0), // Використання DeviceIcon
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40.0,
+        height: 40.0,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 6,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Center(
+          child: DeviceIcon(device: device, size: 30.0),
+        ),
       ),
     );
   }
@@ -275,7 +340,6 @@ class DeviceIcon extends StatelessWidget {
   }
 }
 
-
 class DeviceSettings {
   final int id;
   final String name;
@@ -297,23 +361,39 @@ class DeviceSettings {
     DeviceType type;
     DeviceStatus status;
 
-    if (json['DeviceNickname'].toLowerCase().contains('sw')) {
-      type = DeviceType.waterSensor;
-    } else if (json['DeviceNickname'].toLowerCase().contains('mailbox')) {
-      type = DeviceType.camera;
-    } else {
-      type = DeviceType.electromotor;
+    print("Processing device JSON: $json");
+
+    switch (json['DeviceType']) {
+      case 'Water sensor':
+        type = DeviceType.waterSensor;
+        status = json['Status'] == 2 ? DeviceStatus.normal : DeviceStatus.warning;
+        break;
+      case 'Camera':
+        type = DeviceType.camera;
+        status = json['Status'] == 2 ? DeviceStatus.normal : DeviceStatus.offline;
+        break;
+      case 'Electro motor':
+        type = DeviceType.electromotor;
+        status = DeviceStatus.normal;
+        break;
+      default:
+        print("Unknown device type: ${json['DeviceType']}");
+        type = DeviceType.waterSensor;
+        status = DeviceStatus.normal;
     }
 
-    status = json['Status'] == 2 ? DeviceStatus.normal : DeviceStatus.warning;
+    final latitude = (json['Latitude'] as num?)?.toDouble() ?? 0.0;
+    final longitude = (json['Longitude'] as num?)?.toDouble() ?? 0.0;
+
+    print("Parsed coordinates: lat=$latitude, lng=$longitude");
 
     return DeviceSettings(
-      id: json['Id'],
-      name: json['DeviceNickname'] ?? 'Unknown Device',
+      id: json['Id'] ?? 0,
+      name: json['DeviceNickname']?.toString() ?? 'Unknown Device',
       type: type,
       status: status,
-      latitude: json['Latitude'],
-      longitude: json['Longitude'],
+      latitude: latitude,
+      longitude: longitude,
     );
   }
 

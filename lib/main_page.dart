@@ -1,33 +1,15 @@
 import 'package:flutter/material.dart';
-import 'home_screen.dart';
-import 'map_screen.dart'; // New import
-
-void main() => runApp(const MyApp());
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        navigationBarTheme: NavigationBarThemeData(
-          labelTextStyle: MaterialStateProperty.resolveWith<TextStyle>((Set<MaterialState> states) {
-            if (states.contains(MaterialState.selected)) {
-              return const TextStyle(color: Color(0xFF1D1B20));
-            }
-            return const TextStyle(color: Color(0xFF49454F));
-          }),
-        ),
-      ),
-      home: const MainPage(),
-    );
-  }
-}
+import 'package:first_flutter_proj/home_screen.dart';  // Оновлений імпорт
+import 'package:first_flutter_proj/map_screen.dart';   // Оновлений імпорт
+import 'package:first_flutter_proj/profile_screen.dart'; // Оновлений імпорт
 
 class MainPage extends StatefulWidget {
-  const MainPage({Key? key}) : super(key: key);
+  final dynamic userId;
+  
+  const MainPage({
+    Key? key,
+    required this.userId,
+  }) : super(key: key);
 
   @override
   _MainPageState createState() => _MainPageState();
@@ -36,12 +18,18 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = [
-    const HomeScreen(),
-    const MapScreen(), // Using the imported MapScreen
-    const NotificationsScreen(),
-    const ProfileScreen(),
-  ];
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      HomeScreen(userId: widget.userId),
+      MapScreen(userId: widget.userId),
+      const NotificationsScreen(),
+      ProfileScreen(userId: widget.userId),
+    ];
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -54,9 +42,7 @@ class _MainPageState extends State<MainPage> {
     return Scaffold(
       body: _pages[_selectedIndex],
       bottomNavigationBar: NavigationBar(
-        onDestinationSelected: (int index) {
-          _onItemTapped(index);
-        },
+        onDestinationSelected: _onItemTapped,
         backgroundColor: Colors.white,
         indicatorColor: Colors.indigo,
         selectedIndex: _selectedIndex,
@@ -81,21 +67,13 @@ class _MainPageState extends State<MainPage> {
   }
 }
 
-// Other screens remain unchanged
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: Text('Notifications Screen'));
-  }
-}
-
-class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('Profile Screen'));
+    return const Scaffold(
+      body: Center(child: Text('Notifications Screen')),
+    );
   }
 }
