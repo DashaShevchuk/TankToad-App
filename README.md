@@ -35,15 +35,16 @@ Before we begin, make sure you have the following tools installed:
 5. 🔑 Create a `.env` file in the project root with the following content:
    ```
    API_URL=http://10.0.2.2:5000/
-LOGIN=Users/authenticate
-LOGOUT=Users/Logout
-PHONE_LOGIN=Users/PhoneLogin
-GOOGLE_LOGIN=Users/GoogleLogin
-PASSWORD_RECOVERY=Users/Recovery
-DEVICES_LIST=api/MobileDevice/GetUserDevices
-DEVICE_INFO=api/MobileDevice/GetDevicesById
-GET_USER_PROFILE=api/MobileProfile/GetUserProfile
-GET_WHATER_SENSOR_LEVEL_DATA=api/MobileDevice/WaterSensorGetLevelData
+   LOGIN=Users/authenticate
+   LOGOUT=Users/Logout
+   PHONE_LOGIN=Users/PhoneLogin
+   GOOGLE_LOGIN=Users/GoogleLogin
+   PASSWORD_RECOVERY=Users/Recovery
+   DEVICES_LIST=api/MobileDevice/GetUserDevices
+   DEVICE_INFO=api/MobileDevice/GetDevicesById
+   GET_USER_PROFILE=api/MobileProfile/GetUserProfile
+   GET_WHATER_SENSOR_LEVEL_DATA=api/MobileDevice/WaterSensorGetLevelData
+
    ```
 
 ### 4. Create an Android Emulator
