@@ -714,6 +714,8 @@
 
 
 
+
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
@@ -721,6 +723,7 @@ import 'package:logger/logger.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:country_code_picker/country_code_picker.dart';
 import 'dart:convert';
+import 'password_recovery_screen.dart';
 import 'main_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -732,7 +735,7 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _smsCodeController = TextEditingController();
@@ -746,82 +749,84 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     _phoneController.dispose();
     _smsCodeController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleGoogleSignIn() async {
-    setState(() {
-      _isLoading = true;
-    });
+ Future<void> _handleGoogleSignIn() async {
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
+  try {
+    final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) {
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final token = googleAuth.idToken;
+    final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+    final token = googleAuth.idToken;
 
-      _logger.d("Google token received: ${token?.substring(0, 10)}...");
+    _logger.d("Google token received: ${token?.substring(0, 10)}...");
 
-      final response = await http.post(
-        Uri.parse('${dotenv.env['API_URL']}${dotenv.env['GOOGLE_LOGIN']}'),
-        headers: {
-          'Content-Type': 'application/json',
-          'accept': 'application/json',
-        },
-        body: jsonEncode({
-          'Id': 0,
-          'FirstName': googleUser.displayName?.split(' ').first ?? '',
-          'LastName': googleUser.displayName?.split(' ').last ?? '',
-          'Name': googleUser.displayName ?? '',
-          'Email': googleUser.email,
-          'AuthToken': '',
-          'TokenId': token,
-        }),
-      );
+    final requestBody = {
+      'Id': 0,
+      'FirstName': googleUser.displayName?.split(' ').first ?? '',
+      'LastName': googleUser.displayName?.split(' ').last ?? '',
+      'Name': googleUser.displayName ?? '',
+      'Email': googleUser.email,
+      'AuthToken': '',
+      'TokenId': token ?? '',
+    };
 
-      _logger.d("Google login response status: ${response.statusCode}");
-      _logger.d("Google login response body: ${response.body}");
+    final response = await http.post(
+      Uri.parse('${dotenv.env['API_URL']}${dotenv.env['GOOGLE_LOGIN']}'),
+      headers: {
+        'Content-Type': 'application/json',
+        'accept': 'application/json',
+      },
+      body: jsonEncode(requestBody),
+    );
 
-      if (response.statusCode == 200) {
-        final userData = json.decode(response.body);
-        final userId = userData['Id'];
+    _logger.d("Google login response status: ${response.statusCode}");
+    _logger.d("Google login response body: ${response.body}");
 
-        if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => MainPage(userId: userId)),
-          );
-        }
-      } else {
-        throw Exception('Google login failed');
-      }
-    } catch (e) {
-      _logger.e("Google sign in error: $e");
+    if (response.statusCode == 200) {
+      final userData = json.decode(response.body);
+      final userId = userData['Id'];
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to sign in with Google'),
-            backgroundColor: Colors.red,
-          ),
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => MainPage(userId: userId)),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+    } else {
+      throw Exception('Google login failed');
+    }
+  } catch (e) {
+    _logger.e("Google sign in error: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to sign in with Google'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
 
  Future<void> _sendSmsCode() async {
     if (!_formKey.currentState!.validate()) {
@@ -964,7 +969,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       final body = _selectedLoginMethod == 1
           ? {'Phone': '$_selectedCountryCode${_phoneController.text}', 'Code':' '}
           : {
-              'Username': _emailController.text,
+              'Username': _usernameController.text,
               'Password': _passwordController.text,
             };
 
@@ -1045,7 +1050,7 @@ Widget build(BuildContext context) {
                   padding: const EdgeInsets.all(4),
                   child: Row(
                     children: [
-                      _buildMethodButton(0, Icons.email, 'Email'),
+                      _buildMethodButton(0, Icons.person, 'Username'),
                       _buildMethodButton(1, Icons.phone, 'Phone'),
                       _buildMethodButton(2, Icons.g_mobiledata_rounded, 'Google'),
                     ],
@@ -1057,9 +1062,9 @@ Widget build(BuildContext context) {
                 if (_selectedLoginMethod == 0) ...[
                   // Email Login
                   TextFormField(
-                    controller: _emailController,
+                    controller: _usernameController,
                     decoration: InputDecoration(
-                      labelText: 'Email',
+                      labelText: 'Username',
                       border: const OutlineInputBorder(),
                       filled: true,
                       fillColor: Colors.grey[100],
@@ -1289,9 +1294,14 @@ Widget build(BuildContext context) {
                   const SizedBox(height: 16),
                   Center(
                     child: TextButton(
-                      onPressed: () {
-                        // TODO: Navigate to password recovery
-                      },
+                     onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const PasswordRecoveryScreen(),
+          ),
+        );
+      },
                       child: const Text('Forgot Password?'),
                     ),
                   ),

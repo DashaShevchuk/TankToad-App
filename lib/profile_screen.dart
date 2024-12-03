@@ -3,7 +3,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'dart:convert';
-import 'change_password_screen.dart';
+import 'password_recovery_screen.dart';
 import 'login_page.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -226,7 +226,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           children: [
                             _buildProfileItem('First Name', _userProfile?['FirstName']),
                             _buildProfileItem('Last Name', _userProfile?['LastName']),
-                            _buildProfileItem('Role', _userProfile?['Role']),
                             _buildProfileItem('Email', _userProfile?['Email']),
                             _buildProfileItem('Phone', _userProfile?['Phone']),
                           ],
@@ -239,24 +238,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: Column(
                           children: [
                             ElevatedButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => PasswordRecoveryScreen(),
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(50),
-                                backgroundColor: Colors.indigo,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: const Text('Change Password'),
-                            ),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const PasswordRecoveryScreen(),
+      ),
+    );
+  },
+  style: ElevatedButton.styleFrom(
+    minimumSize: const Size.fromHeight(50),
+    backgroundColor: Colors.indigo,
+    foregroundColor: Colors.white,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(8),
+    ),
+  ),
+  child: const Text('Change Password'),
+),
                             const SizedBox(height: 12),
                             ElevatedButton(
                               onPressed: _showLogoutDialog,
