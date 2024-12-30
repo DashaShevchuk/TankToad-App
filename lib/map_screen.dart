@@ -4,7 +4,19 @@ import 'device_details_screen.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:logger/logger.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+final logger = Logger(
+  printer: PrettyPrinter(
+    methodCount: 0,
+    errorMethodCount: 5,
+    lineLength: 50,
+    colors: true,
+    printEmojis: true,
+    printTime: false,
+  ),
+);
 
 class MapScreen extends StatefulWidget {
   final dynamic userId;
@@ -50,16 +62,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _fetchDevices() async {
     try {
-      final url = '${dotenv.env['API_URL']}${dotenv.env['DEVICES_LIST']}?userListId=${widget.userId}';
-      print("Fetching devices from URL: $url");
+      final url = '${dotenv.env['API_URL']}${dotenv.env['DEVICES_LIST_MAP']}?userListId=${widget.userId}';
       
       final response = await http.get(
         Uri.parse(url),
         headers: {"accept": "application/json"},
       );
-
-      print("Response status: ${response.statusCode}");
-      print("Response body: ${response.body}");
 
       if (response.statusCode == 200) {
         final List<dynamic> decodedData = json.decode(response.body);
@@ -71,7 +79,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         throw Exception('Failed to load devices: ${response.statusCode}');
       }
     } catch (e) {
-      print("Error fetching devices: $e");
       setState(() {
         isLoading = false;
       });
@@ -88,18 +95,28 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   void _onMarkerTapped(int index) {
+    final device = devices[index];
+   logger.i("💡 Active device: ${device.name}"
+               "\n📍 Coordinates: (${device.latitude}, ${device.longitude})"
+               "\n🔧 Type: ${device.type.toString().split('.').last}");
+    
     setState(() {
       currentDeviceIndex = index;
     });
+    
     _pageController.animateToPage(
       index,
       duration: Duration(milliseconds: 300),
       curve: Curves.ease,
     );
-    _animateToLocation(devices[index]);
+    _animateToLocation(device);
   }
 
   void _animateToLocation(DeviceSettings device) {
+    if (device.latitude == 0.0 && device.longitude == 0.0) {
+      return;
+    }
+
     final latTween = Tween<double>(
       begin: mapController.center.latitude,
       end: device.latitude,
@@ -112,8 +129,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _animationController.forward(from: 0);
 
     _animation.addListener(() {
+      final newLat = latTween.evaluate(_animation);
+      final newLng = lngTween.evaluate(_animation);
       mapController.move(
-        LatLng(latTween.evaluate(_animation), lngTween.evaluate(_animation)),
+        LatLng(newLat, newLng),
         mapController.zoom,
       );
     });
@@ -140,36 +159,52 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     zoom: 10.0,
                   ),
                   children: [
+                    // TileLayer(
+                    //   urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    //   subdomains: ['a', 'b', 'c'],
+                    // ),
                     TileLayer(
-                      urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      subdomains: ['a', 'b', 'c'],
-                    ),
-                    MarkerLayer(
-                      markers: devices.asMap().entries.map((entry) {
-                        int idx = entry.key;
-                        DeviceSettings device = entry.value;
-                        return Marker(
-                          width: 40.0,
-                          height: 40.0,
-                          point: LatLng(device.latitude, device.longitude),
-                          builder: (ctx) => MapMarker(
-                            device: device,
-                            onTap: () {
-                              _onMarkerTapped(idx);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => DeviceDetailsScreen(
-                                    deviceId: device.id,
-                                    userId: widget.userId,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      }).toList(),
-                    ),
+  urlTemplate: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  subdomains: ['a', 'b', 'c', 'd'],
+),
+
+                  MarkerLayer(
+  markers: devices.asMap().entries.map((entry) {
+    int idx = entry.key;
+    DeviceSettings device = entry.value;
+    final isActive = currentDeviceIndex == idx;
+    
+    if (isActive) {
+      logger.i("Active marker: ${device.name} at (${device.latitude}, ${device.longitude})");
+    }
+    
+    return Marker(
+      width: 50.0,
+      height: 50.0,
+      point: LatLng(device.latitude, device.longitude),
+      builder: (ctx) => MapMarker(
+        device: device,
+        isActive: isActive,
+        onTap: () => _onMarkerTapped(idx),
+      ),
+    );
+  }).toList()..sort((a, b) {
+    // Отримуємо індекси маркерів
+    final indexA = devices.indexWhere((d) => 
+      d.latitude == (a.point as LatLng).latitude && 
+      d.longitude == (a.point as LatLng).longitude
+    );
+    final indexB = devices.indexWhere((d) => 
+      d.latitude == (b.point as LatLng).latitude && 
+      d.longitude == (b.point as LatLng).longitude
+    );
+    
+    // Якщо один з маркерів активний, він повинен бути зверху
+    if (indexA == currentDeviceIndex) return 1;  // a йде після b
+    if (indexB == currentDeviceIndex) return -1; // b йде після a
+    return 0; // порядок не важливий
+  }),
+),
                   ],
                 ),
                 Positioned(
@@ -184,6 +219,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       setState(() {
                         currentDeviceIndex = index;
                       });
+                      final device = devices[index];
+                      logger.i("Selected device: ${device.name} at (${device.latitude}, ${device.longitude})");
                       _animateToLocation(devices[index]);
                     },
                     itemBuilder: (context, index) {
@@ -265,36 +302,62 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 class MapMarker extends StatelessWidget {
   final DeviceSettings device;
   final VoidCallback onTap;
+  final bool isActive;
 
   const MapMarker({
     Key? key, 
     required this.device,
     required this.onTap,
+    this.isActive = false,
   }) : super(key: key);
 
-  @override
+ @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40.0,
-        height: 40.0,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 6,
-              offset: Offset(0, 3),
+    return Stack(
+      children: [
+        Positioned(
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: Duration(milliseconds: 300),
+              width: isActive ? 50.0 : 40.0,
+              height: isActive ? 50.0 : 40.0,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: isActive 
+                  ? Border.all(color: _getActiveColor(), width: 3)
+                  : null,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 6,
+                    offset: Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: DeviceIcon(
+                  device: device,
+                  size: isActive ? 40.0 : 30.0
+                ),
+              ),
             ),
-          ],
+          ),
         ),
-        child: Center(
-          child: DeviceIcon(device: device, size: 30.0),
-        ),
-      ),
+      ],
     );
+  }
+
+  Color _getActiveColor() {
+    switch (device.type) {
+      case DeviceType.waterSensor:
+        return Colors.blue;
+      case DeviceType.electromotor:
+        return Colors.orange;
+      case DeviceType.camera:
+        return Colors.purple;
+    }
   }
 }
 
@@ -361,8 +424,6 @@ class DeviceSettings {
     DeviceType type;
     DeviceStatus status;
 
-    print("Processing device JSON: $json");
-
     switch (json['DeviceType']) {
       case 'Water sensor':
         type = DeviceType.waterSensor;
@@ -372,20 +433,18 @@ class DeviceSettings {
         type = DeviceType.camera;
         status = json['Status'] == 2 ? DeviceStatus.normal : DeviceStatus.offline;
         break;
-      case 'Electro motor':
+      case 'Pump':
         type = DeviceType.electromotor;
         status = DeviceStatus.normal;
         break;
       default:
-        print("Unknown device type: ${json['DeviceType']}");
+        logger.i("Unknown device type: ${json['DeviceType']}");
         type = DeviceType.waterSensor;
         status = DeviceStatus.normal;
     }
 
     final latitude = (json['Latitude'] as num?)?.toDouble() ?? 0.0;
     final longitude = (json['Longitude'] as num?)?.toDouble() ?? 0.0;
-
-    print("Parsed coordinates: lat=$latitude, lng=$longitude");
 
     return DeviceSettings(
       id: json['Id'] ?? 0,

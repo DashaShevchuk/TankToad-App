@@ -716,12 +716,14 @@
 
 
 
+import 'package:first_flutter_proj/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:country_code_picker/country_code_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'password_recovery_screen.dart';
 import 'main_page.dart';
@@ -746,6 +748,31 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   int _selectedLoginMethod = 0;
   bool _obscurePassword = true;
   bool _showSmsForm = false;
+
+Future<void> _saveSession(String token, int userId) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('auth_token', token);
+  await prefs.setInt('user_id', userId);
+}
+// Автоматична перевірка сесії при запуску
+Future<void> _checkSession() async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
+  final userId = prefs.getInt('user_id');
+
+  if (token != null && userId != null) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => MainPage(userId: userId)),
+    );
+  }
+}
+
+// Виклик перевірки сесії при ініціалізації сторінки
+@override
+void initState() {
+  super.initState();
+  _checkSession();
+}
 
   @override
   void dispose() {
@@ -953,77 +980,68 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   }
 
   Future<void> _trySubmitForm() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+  if (!_formKey.currentState!.validate()) {
+    return;
+  }
 
-    setState(() {
-      _isLoading = true;
-    });
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      final url = _selectedLoginMethod == 1
-          ? '${dotenv.env['API_URL']}${dotenv.env['PHONE_LOGIN']}'
-          : '${dotenv.env['API_URL']}${dotenv.env['LOGIN']}';
+  try {
+    final url = _selectedLoginMethod == 1
+        ? '${dotenv.env['API_URL']}${dotenv.env['PHONE_LOGIN']}'
+        : '${dotenv.env['API_URL']}${dotenv.env['LOGIN']}';
 
-      final body = _selectedLoginMethod == 1
-          ? {'Phone': '$_selectedCountryCode${_phoneController.text}', 'Code':' '}
-          : {
-              'Username': _usernameController.text,
-              'Password': _passwordController.text,
-            };
+    final body = _selectedLoginMethod == 1
+        ? {'Phone': '$_selectedCountryCode${_phoneController.text}', 'Code': ' '}
+        : {
+            'Username': _usernameController.text,
+            'Password': _passwordController.text,
+          };
 
-      if (_selectedLoginMethod == 1) {
-        _logger.d('$_selectedCountryCode${_phoneController.text}');
-      }
+    final response = await http.post(
+      Uri.parse(url),
+      headers: {
+        'Content-Type': 'application/json',
+        'accept': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
 
-      _logger.d("Login URL: $url");
-      _logger.d("Request body: $body");
+    if (response.statusCode == 200) {
+      final userData = json.decode(response.body);
+      final userId = userData['Id'];
+      final token = userData['Token'];
 
-      final response = await http.post(
-        Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-          'accept': 'application/json',
-        },
-        body: jsonEncode(body),
-      );
+      await _saveSession(token, userId); // Збереження токену та userId
 
-      _logger.d("Response status: ${response.statusCode}");
-      _logger.d("Response body: ${response.body}");
-
-      if (response.statusCode == 200) {
-        final userData = json.decode(response.body);
-        final userId = userData['Id'];
-
-        if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => MainPage(userId: userId)),
-          );
-        }
-      } else {
-        throw Exception('Login failed');
-      }
-    } catch (e) {
-      _logger.e("Login error: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_selectedLoginMethod == 1
-                ? 'Invalid phone number'
-                : 'Invalid email or password'),
-            backgroundColor: Colors.red,
-          ),
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => MainPage(userId: userId)),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+    } else {
+      throw Exception('Login failed');
+    }
+  } catch (e) {
+    _logger.e("Login error: $e");
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_selectedLoginMethod == 1
+            ? 'Invalid phone number'
+            : 'Invalid email or password'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
 
 @override
 Widget build(BuildContext context) {

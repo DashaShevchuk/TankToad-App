@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'password_recovery_screen.dart';
 import 'login_page.dart';
@@ -74,6 +75,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (response.statusCode == 200 || response.statusCode == 401) {
         if (mounted) {
+           final prefs = await SharedPreferences.getInstance();
+  await prefs.remove('auth_token');
+  await prefs.remove('user_id');
+
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(
               builder: (context) => const LoginPage(),

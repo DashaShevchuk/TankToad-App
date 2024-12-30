@@ -19,25 +19,39 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<DeviceSettings> _deviceSettings = [];
+ List<DeviceSettings> _deviceSettings = [];
   List<DeviceSettings> _filteredDeviceSettings = [];
   Set<String> _pinnedDeviceIds = {};
   DeviceType? _selectedFilter;
   bool _isLoading = false;
+  bool _isLoadingMore = false;
+  bool _hasMoreDevices = true;
+  int _currentPage = 1;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   final logger = Logger();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_scrollListener);
     _loadPinnedDevices().then((_) => _fetchDeviceSettings());
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
+      if (!_isLoadingMore && _hasMoreDevices && !_isSearching) {
+        _loadMoreDevices();
+      }
+    }
   }
 
   Future<void> _loadPinnedDevices() async {
@@ -63,34 +77,103 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _fetchDeviceSettings() async {
+  // Future<void> _fetchDeviceSettings() async {
+  //   setState(() {
+  //     _isLoading = true;
+  //   });
+
+  //   try {
+  //     final url = '${dotenv.env['API_URL']}${dotenv.env['DEVICES_LIST']}?userListId=${widget.userId}';
+    
+  //     final response = await http.get(
+  //       Uri.parse(url),
+  //       headers: {"accept": "application/json"},
+  //     );
+
+  //     if (response.statusCode == 200) {
+  //       final List<dynamic> decodedData = json.decode(response.body);
+  //       setState(() {
+  //         _deviceSettings = decodedData.map((item) => DeviceSettings.fromJson(item)).toList();
+  //         _updateFilteredDevices();
+  //         _isLoading = false;
+  //       });
+  //     } else {
+  //       throw Exception('Failed to load device settings');
+  //     }
+  //   } catch (e) {
+  //     logger.e("Error fetching devices: $e");
+  //     setState(() {
+  //       _isLoading = false;
+  //     });
+  //     if (mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(
+  //           content: Text('Error: ${e.toString()}'),
+  //           backgroundColor: Colors.red,
+  //         ),
+  //       );
+  //     }
+  //   }
+  // }
+
+ Future<void> _fetchDeviceSettings() async {
     setState(() {
       _isLoading = true;
+      _currentPage = 1;
+      _hasMoreDevices = true;
+      _deviceSettings = [];
     });
 
     try {
-      final url = '${dotenv.env['API_URL']}${dotenv.env['DEVICES_LIST']}?userListId=${widget.userId}';
-      // logger.d("Fetching devices from URL: $url");
-    
+      final url = '${dotenv.env['API_URL']}${dotenv.env['DEVICES_LIST']}?userListId=${widget.userId}&pageNumber=1&pageSize=10';
+      
+      logger.d("Fetching devices from URL: $url");
+      
       final response = await http.get(
         Uri.parse(url),
-        headers: {"accept": "application/json"},
+        headers: {
+          "accept": "application/json",
+          "Content-Type": "application/json",
+        },
       );
-      // logger.d("Request completed with status: ${response.statusCode}");
-      // logger.d("Response body: ${response.body}");
 
       if (response.statusCode == 200) {
-        final List<dynamic> decodedData = json.decode(response.body);
+        final dynamic responseData = json.decode(response.body);
+        List<dynamic> decodedData;
+        int totalPages = 1;
+        
+        if (responseData is Map<String, dynamic>) {
+          if (responseData.containsKey('Data')) {
+            decodedData = responseData['Data'] as List<dynamic>;
+            totalPages = responseData['TotalPages'] as int;
+          } else {
+            logger.e("Response missing Data field: $responseData");
+            throw Exception('Response missing Data field');
+          }
+        } else if (responseData is List) {
+          decodedData = responseData;
+          logger.d("+++++++++++++", decodedData);
+        } else {
+          logger.e("Unexpected response format: $responseData");
+          throw Exception('Unexpected response format');
+        }
+        
+        logger.d("Decoded data length: ${decodedData.length}");
+        logger.d("Total pages: $totalPages");
+        
         setState(() {
           _deviceSettings = decodedData.map((item) => DeviceSettings.fromJson(item)).toList();
           _updateFilteredDevices();
           _isLoading = false;
+          _hasMoreDevices = _currentPage < totalPages;
         });
       } else {
-        throw Exception('Failed to load device settings');
+        logger.e("Error response: ${response.statusCode} - ${response.body}");
+        throw Exception('Failed to load device settings: ${response.statusCode}');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       logger.e("Error fetching devices: $e");
+      logger.e("Stack trace: $stackTrace");
       setState(() {
         _isLoading = false;
       });
@@ -99,12 +182,95 @@ class _HomeScreenState extends State<HomeScreen> {
           SnackBar(
             content: Text('Error: ${e.toString()}'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
     }
   }
 
+  Future<void> _loadMoreDevices() async {
+    if (_isLoadingMore) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final nextPage = _currentPage + 1;
+      final url = '${dotenv.env['API_URL']}${dotenv.env['DEVICES_LIST']}?userListId=${widget.userId}&pageNumber=$nextPage&pageSize=10';
+      
+      logger.d("Loading more devices from URL: $url");
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          "accept": "application/json",
+          "Content-Type": "application/json",
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final dynamic responseData = json.decode(response.body);
+        List<dynamic> decodedData;
+        int totalPages = 1;
+        
+        if (responseData is Map<String, dynamic>) {
+          if (responseData.containsKey('Data')) {
+            decodedData = responseData['Data'] as List<dynamic>;
+            totalPages = responseData['TotalPages'] as int;
+          } else {
+            logger.e("Response missing Data field: $responseData");
+            throw Exception('Response missing Data field');
+          }
+        } else if (responseData is List) {
+          decodedData = responseData;
+        } else {
+          logger.e("Unexpected response format: $responseData");
+          throw Exception('Unexpected response format');
+        }
+        
+        logger.d("Decoded data length: ${decodedData.length}");
+        logger.d("Total pages: $totalPages");
+        
+        if (decodedData.isEmpty) {
+          setState(() {
+            _hasMoreDevices = false;
+            _isLoadingMore = false;
+          });
+          return;
+        }
+
+        final newDevices = decodedData.map((item) => DeviceSettings.fromJson(item)).toList();
+        
+        setState(() {
+          _deviceSettings.addAll(newDevices);
+          _currentPage = nextPage;
+          _updateFilteredDevices();
+          _isLoadingMore = false;
+          _hasMoreDevices = nextPage < totalPages;
+        });
+      } else {
+        logger.e("Error response: ${response.statusCode} - ${response.body}");
+        throw Exception('Failed to load more devices: ${response.statusCode}');
+      }
+    } catch (e, stackTrace) {
+      logger.e("Error loading more devices: $e");
+      logger.e("Stack trace: $stackTrace");
+      setState(() {
+        _isLoadingMore = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading more devices: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
   void _togglePinDevice(String deviceId) {
     setState(() {
       if (_pinnedDeviceIds.contains(deviceId)) {
@@ -123,7 +289,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final List<DeviceSettings> unpinnedDevices = [];
 
     for (var device in _deviceSettings) {
-      // Apply both search and type filters
       bool matchesSearch = device.name.toLowerCase().contains(searchQuery);
       bool matchesType = _selectedFilter == null || device.type == _selectedFilter;
       
@@ -196,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             backgroundColor: Colors.grey[100],
             selectedColor: Colors.blue[100],
-            checkmarkColor: Colors.blue,
+            showCheckmark: false, 
             labelStyle: TextStyle(
               color: _selectedFilter == DeviceType.waterSensor ? Colors.blue : Colors.grey[700],
               fontWeight: _selectedFilter == DeviceType.waterSensor ? FontWeight.bold : FontWeight.normal,
@@ -217,7 +382,7 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             backgroundColor: Colors.grey[100],
             selectedColor: Colors.yellow[100],
-            checkmarkColor: Colors.orange,
+            showCheckmark: false, 
             labelStyle: TextStyle(
               color: _selectedFilter == DeviceType.electromotor ? Colors.orange : Colors.grey[700],
               fontWeight: _selectedFilter == DeviceType.electromotor ? FontWeight.bold : FontWeight.normal,
@@ -238,7 +403,7 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             backgroundColor: Colors.grey[100],
             selectedColor: Colors.deepPurple[100],
-            checkmarkColor: Colors.deepPurple,
+            showCheckmark: false, 
             labelStyle: TextStyle(
               color: _selectedFilter == DeviceType.camera ? Colors.deepPurple : Colors.grey[700],
               fontWeight: _selectedFilter == DeviceType.camera ? FontWeight.bold : FontWeight.normal,
@@ -308,7 +473,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-       body: _isLoading
+        body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
@@ -319,8 +484,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: RefreshIndicator(
                     onRefresh: _fetchDeviceSettings,
                     child: ListView.builder(
-                      itemCount: _filteredDeviceSettings.length,
+                      controller: _scrollController,
+                      itemCount: _filteredDeviceSettings.length + (_isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
+                        if (index == _filteredDeviceSettings.length) {
+                          return _buildLoadingIndicator();
+                        }
                         final device = _filteredDeviceSettings[index];
                         return _buildDeviceCard(device);
                       },
@@ -332,7 +501,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
     );
   }
-
+ Widget _buildLoadingIndicator() {
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      alignment: Alignment.center,
+      child: const CircularProgressIndicator(),
+    );
+  }
   Widget _buildAddSensorsButton() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -411,14 +586,27 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Icon(iconData, color: iconColor),
           ),
           title: Text(device.name),
-          subtitle: Text(
-            device.getStatusText(),
-            style: TextStyle(
-              color: device.status == DeviceStatus.normal
-                  ? Colors.black54
-                  : Colors.red,
-            ),
-          ),
+  subtitle: Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: device.statusList.map((status) => Row(
+    children: [
+      if (status.status == DeviceStatus.danger || status.status == DeviceStatus.warning) ...[
+        Icon(
+          status.status == DeviceStatus.danger ? Icons.error : Icons.warning,
+          color: status.getColor(),
+          size: 16,
+        ),
+        const SizedBox(width: 4),
+      ],
+      Text(
+        status.message,
+        style: TextStyle(
+          color: status.getColor(),
+        ),
+      ),
+    ],
+  )).toList(),
+),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -491,86 +679,67 @@ class DeviceIcon extends StatelessWidget {
 
 enum DeviceType { waterSensor, electromotor, camera }
 
-enum DeviceStatus { normal, warning, offline }
+enum DeviceStatus { safe, warning, danger }
 
 class DeviceSettings {
   final dynamic id;
   final String name;
   final DeviceType type;
-  final DeviceStatus status;
-  final String? additionalInfo;
+  final List<StatusInfo> statusList;
 
   DeviceSettings({
     required this.id,
     required this.name,
     required this.type,
-    required this.status,
-    this.additionalInfo,
+    required this.statusList,
   });
 
   factory DeviceSettings.fromJson(Map<String, dynamic> json) {
-    final logger = Logger();
-    logger.d("Processing device JSON: $json");
-    
-    DeviceType type;
-    DeviceStatus status;
+    final type = switch (json['DeviceType']) {
+      'Water sensor' => DeviceType.waterSensor,
+      'Camera' => DeviceType.camera,
+      'Pump' => DeviceType.electromotor,
+      _ => DeviceType.waterSensor,
+    };
 
-    if (json['DeviceNickname'].toString().toLowerCase().contains('sw')) {
-      type = DeviceType.waterSensor;
-      status = json['Status'] == 2 ? DeviceStatus.normal : DeviceStatus.warning;
-    } else if (json['DeviceNickname'].toString().toLowerCase().contains('mailbox')) {
-      type = DeviceType.camera;
-      status = json['Status'] == 2 ? DeviceStatus.normal : DeviceStatus.offline;
-    } else {
-      type = DeviceType.electromotor;
-      status = DeviceStatus.normal;
-    }
-
-    switch (json['DeviceType']) {
-      case 'Water sensor':
-        type = DeviceType.waterSensor;
-        status = json['Status'] == 2 ? DeviceStatus.normal : DeviceStatus.warning;
-        break;
-      case 'Camera':
-        type = DeviceType.camera;
-        status = json['Status'] == 2 ? DeviceStatus.normal : DeviceStatus.offline;
-        break;
-      case 'Pump':
-        type = DeviceType.electromotor;
-        status = DeviceStatus.normal;
-        break;
-      default:
-        logger.w("Unknown device type: ${json['DeviceType']}");
-        type = DeviceType.waterSensor;
-        status = DeviceStatus.normal;
-    }
-
-    final deviceId = json['Id'];
-    logger.d("Parsed device ID: $deviceId");
-
-    if (deviceId == null) {
-      logger.e("Device ID is null in JSON: $json");
+    List<StatusInfo> statusList = [];
+    if (json['Status'] is Map) {
+      (json['Status'] as Map).forEach((message, level) {
+        statusList.add(StatusInfo(
+          message: message,
+          status: switch (level) {
+            2 => DeviceStatus.safe,
+            1 => DeviceStatus.warning,
+            0 => DeviceStatus.danger,
+            _ => DeviceStatus.safe,
+          }
+        ));
+      });
     }
 
     return DeviceSettings(
-      id: deviceId,
+      id: json['Id'],
       name: json['DeviceNickname'] ?? 'Unknown Device',
       type: type,
-      status: status,
-      additionalInfo: type == DeviceType.electromotor ? '4.75 kWh' : null,
+      statusList: statusList,
     );
   }
+}
 
-  String getStatusText() {
-    switch (type) {
-      case DeviceType.waterSensor:
-        return status == DeviceStatus.normal
-            ? 'Рівень води в нормі'
-            : 'Рівень води перевищує норму';
-      case DeviceType.electromotor:
-        return 'Працює • ${additionalInfo ?? "0.00 kWh"}';
-      case DeviceType.camera:
-        return status == DeviceStatus.normal ? 'Працює' : 'Offline';
-    }
+class StatusInfo {
+  final String message;
+  final DeviceStatus status;
+
+  StatusInfo({
+    required this.message,
+    required this.status,
+  });
+
+  Color getColor() {
+    return switch (status) {
+      DeviceStatus.danger => Colors.red,
+      DeviceStatus.warning => Colors.orange,
+      DeviceStatus.safe => Colors.black54,
+    };
   }
 }
